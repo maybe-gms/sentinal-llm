@@ -1,0 +1,30 @@
+# --- Generated run artifacts (never commit these) ---
+# Logs, ASR CSVs, and the Ollama response cache are regenerated every run.
+# Committing them causes constant merge conflicts and bloats the repo.
+runs/
+*.jsonl
+*.csv
+llm_cache.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Model weights / large files (models live in Ollama, not the repo) ---
+*.gguf
+*.bin
+*.safetensors
+
+# --- Editor / OS noise ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Secrets (if any module ever needs an API key, keep it out of git) ---
+.env
+*.key
