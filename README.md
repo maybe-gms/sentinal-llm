@@ -17,10 +17,10 @@ tracked across rounds.
 
 | Module | Owner | Job | Status |
 |---|---|---|---|
-| **M1** | *(teammate)* | Detect whether an input is contaminated with an injected instruction | not started |
-| **M2** | *(you)* | Automatically generate + evolve prompt-injection attacks; measure ASR | **working** |
-| **M3** | *(teammate)* | Post-hoc filter checking model outputs for unsafe / leaked content | not started |
-| **M4** | *(teammate)* | Test security of LLM agents that call tools / APIs | not started |
+| **M1** | *George Tomy* | Detect whether an input is contaminated with an injected instruction |
+| **M2** | *Gayathri M S* | Automatically generate + evolve prompt-injection attacks; measure ASR |
+| **M3** | *Jerin M Joshwa* | Post-hoc filter checking model outputs for unsafe / leaked content |
+| **M4** | *Fathima Amrin* | Test security of LLM agents that call tools / APIs |
 
 Each module lives in its own folder and is developed independently. They connect
 in the final phase through **agreed interfaces** (see below), not shared internals.
@@ -29,10 +29,10 @@ in the final phase through **agreed interfaces** (see below), not shared interna
 final-year-project/
 ├─ README.md            ← this file
 ├─ .gitignore
-├─ m1_detector/         (teammate)
+├─ m1_detector/         
 ├─ m2_attacker/         ← M2, the red-teaming attacker + experiment harness
-├─ m3_monitor/          (teammate)
-├─ m4_agent/            (teammate)
+├─ m3_monitor/          
+├─ m4_agent/            
 └─ shared/              (anything used by more than one module, added later)
 ```
 
