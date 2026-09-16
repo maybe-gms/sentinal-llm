@@ -31,6 +31,11 @@ Usage:
     python run_loop.py --detector none --rounds 1
     python run_loop.py --detector kad  --rounds 2
     python run_loop.py --detector kad  --trials 3  # override REPEAT_TRIALS
+
+    # with M3 (output monitor) on the answer path:
+    python run_loop.py --detector none --monitor m3   # M3 alone
+    python run_loop.py --detector kad  --monitor m3   # both doors guarded
+    python run_loop.py --detector kad  --monitor m3 --m3-guard   # + Llama Guard
 """
 
 import argparse
@@ -43,6 +48,8 @@ import config
 from attacker import EvolutionaryAttacker
 from target_app import TargetApp
 from detectors import build_detector
+from output_guard import build_output_guard
+from tasks import TARGET_TASKS
 
 
 def get_client(mock: bool):
@@ -62,6 +69,7 @@ def _run_one_round(app, client, rnd, detector_name, trials, write_artifacts=True
     are averaged over all trials.
     """
     asrs, block_rates, blocks, successes, attempts = [], [], [], [], []
+    det_blocks, mon_blocks = [], []
     first_attacker = None
 
     for t in range(trials):
@@ -72,6 +80,8 @@ def _run_one_round(app, client, rnd, detector_name, trials, write_artifacts=True
         n = len(log)
         n_block = sum(1 for r in log if r.blocked)
         n_succ = sum(1 for r in log if r.injected_success)
+        det_blocks.append(sum(1 for r in log if r.blocked_by == "detector"))
+        mon_blocks.append(sum(1 for r in log if r.blocked_by == "monitor"))
 
         asrs.append(n_succ / max(1, n))
         block_rates.append(n_block / max(1, n))
@@ -113,25 +123,56 @@ def _run_one_round(app, client, rnd, detector_name, trials, write_artifacts=True
         "asr_std": round(std_asr, 4),
         "attempts": attempts[0] if attempts else 0,
         "blocked_mean": round(mean_block, 1),
+        "blocked_by_detector_mean": round(statistics.mean(det_blocks), 1),
+        "blocked_by_monitor_mean": round(statistics.mean(mon_blocks), 1),
         "success_mean": round(statistics.mean(successes), 1),
         "best_template": best_template,
     }
 
 
-def run(detector_kind: str, rounds: int, mock: bool, trials: int):
+def measure_clean_fpr(app):
+    """Send every CLEAN target sample (no injection) through the app and count
+    how many get blocked anyway. Those are false alarms. A defense that blocks
+    everything would also get ASR = 0, so ASR is only meaningful next to this."""
+    total = blocked = 0
+    for task in TARGET_TASKS:
+        for sample in task.samples:
+            total += 1
+            resp = app.query(task, sample["data"])
+            if resp.blocked:
+                blocked += 1
+                print(f"    false alarm ({resp.blocked_by}) on clean "
+                      f"{task.name}: {resp.raw_output[:60]!r}")
+    return blocked, total
+
+
+def run(detector_kind: str, rounds: int, mock: bool, trials: int,
+        monitor_kind: str = "none", m3_guard: bool = False):
     client = get_client(mock)
     detector = build_detector(detector_kind, client)
-    app = TargetApp(client, detector=detector)
+    guard = build_output_guard(monitor_kind, use_llama_guard=m3_guard)
+    output_guard = None if guard.name == "none" else guard
+    app = TargetApp(client, detector=detector, output_guard=output_guard)
+
+    # Run name tags every output file, e.g. "kad", "kad_m3", "none_m3".
+    run_name = detector.name if output_guard is None else f"{detector.name}_{guard.name}"
 
     os.makedirs("runs", exist_ok=True)
     history = []
 
-    print(f"\n=== Closed loop: detector={detector.name}, rounds={rounds}, "
-          f"trials={trials}, mock={mock} ===")
+    print(f"\n=== Closed loop: detector={detector.name}, monitor={guard.name}, "
+          f"rounds={rounds}, trials={trials}, mock={mock} ===")
+
+    fp, n_clean = measure_clean_fpr(app)
+    clean_fpr = fp / max(1, n_clean)
+    print(f"[Clean check] false alarms on clean inputs: {fp}/{n_clean} "
+          f"(FPR = {clean_fpr:.2f})")
 
     for rnd in range(rounds):
         print(f"\n[Round {rnd}] attacking (detector={detector.name})")
-        stats = _run_one_round(app, client, rnd, detector.name, trials)
+        stats = _run_one_round(app, client, rnd, run_name, trials)
+        stats["monitor"] = guard.name
+        stats["clean_fpr"] = round(clean_fpr, 4)
         history.append(stats)
 
         pct_block = 100 * stats["blocked_mean"] / max(1, stats["attempts"])
@@ -140,6 +181,9 @@ def run(detector_kind: str, rounds: int, mock: bool, trials: int):
               f"blocked {stats['blocked_mean']:.0f}/{stats['attempts']} "
               f"({pct_block:.0f}%)  |  "
               f"succeeded {stats['success_mean']:.0f}/{stats['attempts']}")
+        if output_guard is not None:
+            print(f"          blocked by detector: {stats['blocked_by_detector_mean']:.0f}  |  "
+                  f"blocked by M3 monitor: {stats['blocked_by_monitor_mean']:.0f}")
 
         # In a real run, M1 retrains here on accumulated contaminated examples,
         # then you rebuild `detector`/`app` with the updated M1 and continue.
@@ -148,7 +192,7 @@ def run(detector_kind: str, rounds: int, mock: bool, trials: int):
         # exactly the static baseline your project compares against.
 
     # ASR history CSV is per-detector so runs don't overwrite each other.
-    out_csv = config.ASR_LOG.replace(".csv", f"_{detector.name}.csv")
+    out_csv = config.ASR_LOG.replace(".csv", f"_{run_name}.csv")
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(history[0].keys()))
         w.writeheader()
@@ -166,9 +210,14 @@ def main():
                          "Defaults to config.REPEAT_TRIALS.")
     ap.add_argument("--mock", action="store_true",
                     help="Use the fake client - no Ollama needed. Plumbing test only.")
+    ap.add_argument("--monitor", default="none", choices=["none", "m3"],
+                    help="Output monitor on the answer path. 'm3' = Jerin's M3.")
+    ap.add_argument("--m3-guard", action="store_true",
+                    help="Also run Llama Guard inside M3 (needs `ollama pull "
+                         "llama-guard3:1b`, and is much slower).")
     args = ap.parse_args()
     trials = args.trials if args.trials is not None else config.REPEAT_TRIALS
-    run(args.detector, args.rounds, args.mock, trials)
+    run(args.detector, args.rounds, args.mock, trials, args.monitor, args.m3_guard)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ two tasks coincide (Section 2.2) - we sidestep it by scoring honestly.
 
 import re
 from dataclasses import dataclass
+from typing import Optional
 
 from tasks import Task
 
@@ -36,6 +37,11 @@ class AttackResult:
     contaminated_data: str
     target_task: str
     injected_task: str
+    # Which defense stopped it: None, "detector" (M1/KAD) or "monitor" (M3).
+    blocked_by: Optional[str] = None
+    # Did the LLM itself follow the injection, before M3 looked at the answer?
+    # Needed so M1 still learns from attacks that fooled it but were caught by M3.
+    llm_followed: bool = False
 
 
 def score_injected(

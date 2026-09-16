@@ -109,9 +109,14 @@ class EvolutionaryAttacker:
             resp = self.app.query(t_task, full_data)
             if not resp.blocked:
                 not_blocked += 1
-            ok = (not resp.blocked) and score_injected(
-                i_task, injected_answer, resp.output, t_sample.get("answer", "")
+
+            # Did the LLM follow the injection? (checked on its raw answer,
+            # before the output monitor had a chance to withhold it)
+            followed = resp.blocked_by != "detector" and score_injected(
+                i_task, injected_answer, resp.raw_output, t_sample.get("answer", "")
             )
+            # End-to-end success = LLM followed it AND no defense stopped it.
+            ok = followed and not resp.blocked
             if ok:
                 successes += 1
 
@@ -123,6 +128,8 @@ class EvolutionaryAttacker:
                     contaminated_data=full_data,
                     target_task=t_task.name,
                     injected_task=i_task.name,
+                    blocked_by=resp.blocked_by,
+                    llm_followed=followed,
                 )
             )
 
@@ -250,6 +257,8 @@ class EvolutionaryAttacker:
                     "injected_task": r.injected_task,
                     "injected_success": r.injected_success,
                     "blocked": r.blocked,
+                    "blocked_by": r.blocked_by,
+                    "llm_followed": r.llm_followed,
                     "contaminated_data": r.contaminated_data,
                     "output": r.output,
                 }) + "\n")
@@ -261,9 +270,14 @@ class EvolutionaryAttacker:
 
     def successful_examples(self) -> List[dict]:
         """The training signal handed back to M1: every contaminated input
-        that beat the current defense. These become new 'contaminated' labels."""
+        that got past the INPUT detector and made the LLM follow the injection.
+
+        Note this includes attacks that M3 caught afterwards. M3 saving the day
+        does not change the fact that M1 missed it - so M1 should still learn
+        from it. With no output monitor attached, this is identical to the old
+        "injected_success" list."""
         return [
             {"text": r.contaminated_data, "label": "contaminated",
              "target_task": r.target_task, "injected_task": r.injected_task}
-            for r in self.attack_log if r.injected_success
+            for r in self.attack_log if r.llm_followed
         ]
