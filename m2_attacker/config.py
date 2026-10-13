@@ -23,11 +23,11 @@ MAX_TOKENS = 128
 REQUEST_TIMEOUT = 180
 
 # --- Attacker search ------------------------------------------------------
-POPULATION_SIZE = 4        # candidate strategies alive per generation
-GENERATIONS = 3            # how many mutate/select rounds per attack run
+POPULATION_SIZE = 8        # candidate strategies alive per generation
+GENERATIONS = 5            # how many mutate/select rounds per attack run
 ELITE_KEEP = 2             # top-k strategies carried forward unchanged
-PAIRS_PER_EVAL = 4         # (target task, injected task) pairs each candidate faces
-REPEAT_TRIALS = 1          # raise to 3 for the final reported numbers
+PAIRS_PER_EVAL = 6         # (target task, injected task) pairs each candidate faces
+REPEAT_TRIALS = 3          # raise to 3 for the final reported numbers
 
 # --- Known-answer detector (baseline until M1 is trained) -----------------
 SECRET_KEY = "DGDSGNH"
