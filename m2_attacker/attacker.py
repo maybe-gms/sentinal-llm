@@ -85,8 +85,11 @@ class Strategy:
 
 
 class EvolutionaryAttacker:
-    def __init__(self, app: TargetApp, client: OllamaClient, rng: Optional[random.Random] = None):
+    def __init__(self, app: TargetApp, client: OllamaClient, rng: Optional[random.Random] = None,
+                 injected_tasks: Optional[List[Task]] = None):
         self.app = app
+        # Which injected tasks to sample from (see ATTACK_SETS in tasks.py).
+        self.injected_tasks = injected_tasks or INJECTED_TASKS
         self.client = client
         self.rng = rng or random.Random(config.SEED)
         self.attack_log: List[AttackResult] = []
@@ -100,7 +103,7 @@ class EvolutionaryAttacker:
 
             # Prompt-stealing's expected answer is the live target instruction.
             injected_answer = i_sample["answer"]
-            if i_task.name == INJ_PROMPT_STEAL.name:
+            if i_sample["answer"] == "__TARGET_INSTRUCTION__":
                 injected_answer = t_task.instruction
 
             contaminated = strat.build(i_task.instruction, i_sample["data"])
@@ -130,6 +133,7 @@ class EvolutionaryAttacker:
                     injected_task=i_task.name,
                     blocked_by=resp.blocked_by,
                     llm_followed=followed,
+                    raw_output=resp.raw_output,
                 )
             )
 
@@ -180,9 +184,9 @@ class EvolutionaryAttacker:
     # ---- sampling task pairs --------------------------------------------
     def _sample_pairs(self, k: int, injected_filter: Optional[str] = None) -> List[Tuple]:
         pairs = []
-        inj_pool = INJECTED_TASKS
+        inj_pool = self.injected_tasks
         if injected_filter:
-            inj_pool = [t for t in INJECTED_TASKS if t.name == injected_filter]
+            inj_pool = [t for t in self.injected_tasks if t.name == injected_filter]
         for _ in range(k):
             t_task = self.rng.choice(TARGET_TASKS)
             t_sample = self.rng.choice(t_task.samples)
@@ -259,6 +263,7 @@ class EvolutionaryAttacker:
                     "blocked": r.blocked,
                     "blocked_by": r.blocked_by,
                     "llm_followed": r.llm_followed,
+                    "raw_output": r.raw_output,
                     "contaminated_data": r.contaminated_data,
                     "output": r.output,
                 }) + "\n")

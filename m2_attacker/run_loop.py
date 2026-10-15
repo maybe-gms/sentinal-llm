@@ -49,7 +49,7 @@ from attacker import EvolutionaryAttacker
 from target_app import TargetApp
 from detectors import build_detector
 from output_guard import build_output_guard
-from tasks import TARGET_TASKS
+from tasks import TARGET_TASKS, ATTACK_SETS
 
 
 def get_client(mock: bool):
@@ -60,7 +60,8 @@ def get_client(mock: bool):
     return OllamaClient()
 
 
-def _run_one_round(app, client, rnd, detector_name, trials, write_artifacts=True):
+def _run_one_round(app, client, rnd, detector_name, trials, write_artifacts=True,
+                   attack_set="default"):
     """Run one round `trials` times. Return an aggregated stats dict.
 
     Artifacts (attack log + contaminated training file) are written from the
@@ -73,7 +74,7 @@ def _run_one_round(app, client, rnd, detector_name, trials, write_artifacts=True
     first_attacker = None
 
     for t in range(trials):
-        attacker = EvolutionaryAttacker(app, client)
+        attacker = EvolutionaryAttacker(app, client, injected_tasks=ATTACK_SETS[attack_set])
         best = attacker.run(verbose=(t == 0))  # only narrate the first trial
 
         log = attacker.attack_log
@@ -147,7 +148,7 @@ def measure_clean_fpr(app):
 
 
 def run(detector_kind: str, rounds: int, mock: bool, trials: int,
-        monitor_kind: str = "none", m3_guard: bool = False):
+        monitor_kind: str = "none", m3_guard: bool = False, attack_set: str = "default"):
     client = get_client(mock)
     detector = build_detector(detector_kind, client)
     guard = build_output_guard(monitor_kind, use_llama_guard=m3_guard)
@@ -156,12 +157,14 @@ def run(detector_kind: str, rounds: int, mock: bool, trials: int,
 
     # Run name tags every output file, e.g. "kad", "kad_m3", "none_m3".
     run_name = detector.name if output_guard is None else f"{detector.name}_{guard.name}"
+    if attack_set != "default":
+        run_name += f"_{attack_set}"   # keeps evasion runs from overwriting normal runs
 
     os.makedirs("runs", exist_ok=True)
     history = []
 
     print(f"\n=== Closed loop: detector={detector.name}, monitor={guard.name}, "
-          f"rounds={rounds}, trials={trials}, mock={mock} ===")
+          f"attacks={attack_set}, rounds={rounds}, trials={trials}, mock={mock} ===")
 
     fp, n_clean = measure_clean_fpr(app)
     clean_fpr = fp / max(1, n_clean)
@@ -170,7 +173,7 @@ def run(detector_kind: str, rounds: int, mock: bool, trials: int,
 
     for rnd in range(rounds):
         print(f"\n[Round {rnd}] attacking (detector={detector.name})")
-        stats = _run_one_round(app, client, rnd, run_name, trials)
+        stats = _run_one_round(app, client, rnd, run_name, trials, attack_set=attack_set)
         stats["monitor"] = guard.name
         stats["clean_fpr"] = round(clean_fpr, 4)
         history.append(stats)
@@ -215,9 +218,13 @@ def main():
     ap.add_argument("--m3-guard", action="store_true",
                     help="Also run Llama Guard inside M3 (needs `ollama pull "
                          "llama-guard3:1b`, and is much slower).")
+    ap.add_argument("--attack-set", default="default", choices=sorted(ATTACK_SETS),
+                    help="default = original 5 attacks; m3_evasion = plain vs "
+                         "disguised prompt stealing; all = everything.")
     args = ap.parse_args()
     trials = args.trials if args.trials is not None else config.REPEAT_TRIALS
-    run(args.detector, args.rounds, args.mock, trials, args.monitor, args.m3_guard)
+    run(args.detector, args.rounds, args.mock, trials, args.monitor, args.m3_guard,
+        args.attack_set)
 
 
 if __name__ == "__main__":
