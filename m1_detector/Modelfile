@@ -1,0 +1,23 @@
+# Modelfile for the fine-tuned M1 detector (Phi-3 Mini + your QLoRA adapter, merged and shrunk to GGUF).
+#
+# Put this file in the SAME folder as the .gguf file (m1_detector/), then run:
+#     ollama create m1-detector -f Modelfile
+#
+# If you converted with a different quantization (e.g. Q4_K_M), change the file name on the FROM line.
+FROM ./m1-detector-Q8_0.gguf
+
+# This must match the chat format used during training (Phi-3 format, no system message).
+# If it differs, the model sees text it was never trained on and the detector will misbehave.
+TEMPLATE """<|user|>
+{{ .Prompt }}<|end|>
+<|assistant|>
+"""
+
+PARAMETER stop "<|end|>"
+PARAMETER stop "<|user|>"
+PARAMETER stop "<|assistant|>"
+
+# Deterministic output: detection should not depend on random sampling.
+PARAMETER temperature 0
+PARAMETER num_ctx 2048
+PARAMETER num_predict 64
