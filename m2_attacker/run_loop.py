@@ -37,6 +37,7 @@ import argparse
 import csv
 import json
 import os
+import random
 import statistics
 
 import config
@@ -65,7 +66,11 @@ def _run_one_round(app, client, rnd, detector_name, trials, write_artifacts=True
     first_attacker = None
 
     for t in range(trials):
-        attacker = EvolutionaryAttacker(app, client)
+        # A different random seed per trial (SEED, SEED+1, ...). With one shared
+        # seed every trial drew identical pairs and mutations, hit the response
+        # cache, and replayed trial 1 exactly - so std was always 0. Trial 0
+        # still uses config.SEED, so it reproduces the earlier runs.
+        attacker = EvolutionaryAttacker(app, client, rng=random.Random(config.SEED + t))
         best = attacker.run(verbose=(t == 0))  # only narrate the first trial
 
         log = attacker.attack_log

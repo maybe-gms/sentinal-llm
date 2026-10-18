@@ -36,6 +36,10 @@ class AttackResult:
     contaminated_data: str
     target_task: str
     injected_task: str
+    # Which strategy produced this attempt (for the report only - these two
+    # fields go into the attack log, NOT into the contaminated file for M1).
+    origin: str = ""   # full lineage, e.g. "persona<seed>"
+    root: str = ""     # family it started from: "seed" or "structure:<category>"
 
 
 def score_injected(
