@@ -201,6 +201,9 @@ single clearest proof of the closed loop's value.
 | `scorer.py` | deterministic ASR scoring (incl. same-task collapse guard) |
 | `attacker.py` | the evolutionary attacker — **the heart of M2** |
 | `run_loop.py` | closed-loop driver: trials, averaging, tagged outputs, ASR history |
+| `template_bank.py` | loads + validates the structure templates (`templates/`) |
+| `eval_heldout.py` | generalisation check: held-out templates vs train vs seeds |
+| `report.py` | reads the run outputs and draws the charts + `report.md` |
 
 If you understand one file for the viva, make it `attacker.py`.
 
@@ -223,10 +226,25 @@ If you understand one file for the viva, make it `attacker.py`.
   injection. The scorer refuses to credit these (see `scorer.py`); the held-out
   set should avoid such pairs.
 
+## Generalisation check (`eval_heldout.py`)
+
+One template per structure category is held out: the search never seeds or
+mutates it. `eval_heldout.py` scores the **held-out** templates, the **train**
+templates, and the five **seeds** on the *same* fixed pairs, with no evolution,
+and reports ASR per group (plus `runs/chart_generalization_<detector>.png`).
+
+```bash
+py eval_heldout.py --detector none
+py eval_heldout.py --detector m1      # needs the m1-detector model in Ollama
+```
+
+Read it as: **held-out ASR ≈ train ASR ⇒ the structure *family* is what works,
+not the specific templates the search happened to use** (so it is not
+cherry-picking). Against `m1` it doubles as a probe of how M1 copes with
+structures it never saw in training.
+
 ## Later (not needed for review one)
 
 - Swap the inline `samples` in `tasks.py` for the seven HuggingFace datasets the
   paper uses (SST2, SMS Spam, Gigaword, HSOL, RTE, MRPC, Jfleg).
-- Hold out an injected task never seen during any round; report its ASR
-  separately to show generalisation, not memorisation.
 - Wire the retrain-and-reload hook so the loop runs adaptively against M1.
