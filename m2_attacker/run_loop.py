@@ -43,6 +43,7 @@ import os
 import random
 import statistics
 import sys
+import time
 
 import config
 from attacker import EvolutionaryAttacker
@@ -86,6 +87,24 @@ def _mock_m1_predict(text: str) -> bool:
     return any(cue in t for cue in ["ignore previous", "disregard", "[system]", "<|system|>"])
 
 
+def _retrying(predict_fn, tries=4, wait=10.0):
+    """Wrap predict() so a TRANSIENT Ollama error (e.g. a slow model reload
+    timing out under MAX_LOADED_MODELS=1) is retried instead of aborting the
+    whole run. After `tries` attempts it re-raises, so a genuinely-down Ollama
+    still stops the run - M1 must never silently answer 'clean'."""
+    def wrapped(text):
+        for attempt in range(tries):
+            try:
+                return predict_fn(text)
+            except RuntimeError as e:
+                if attempt == tries - 1:
+                    raise
+                print(f"    [M1 retry {attempt + 1}/{tries - 1}] transient Ollama "
+                      f"error, waiting {wait:.0f}s: {str(e)[:80]}")
+                time.sleep(wait)
+    return wrapped
+
+
 def make_detector(kind: str, client, mock: bool):
     if kind != "m1":
         return build_detector(kind, client)
@@ -93,7 +112,9 @@ def make_detector(kind: str, client, mock: bool):
     # M1 answers at temperature 0, so the same text always gets the same
     # verdict. Remembering verdicts avoids re-asking Ollama for repeated texts
     # (elites are re-tested every generation), which saves a lot of CPU time.
-    return M1Detector(functools.lru_cache(maxsize=None)(predict))
+    # The retry wrapper sits INSIDE the cache: only real verdicts are cached,
+    # transient failures are retried and never cached.
+    return M1Detector(functools.lru_cache(maxsize=None)(_retrying(predict)))
 
 
 # ---- one round -----------------------------------------------------------
