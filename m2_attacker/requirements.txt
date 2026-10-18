@@ -1,1 +1,2 @@
 requests>=2.31.0
+matplotlib>=3.7.0  # report.py charts only; the attack loop itself needs only requests

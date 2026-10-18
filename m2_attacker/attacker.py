@@ -125,6 +125,9 @@ class EvolutionaryAttacker:
         self.client = client
         self.rng = rng or random.Random(config.SEED)
         self.attack_log: List[AttackResult] = []
+        # One row per generation: the best strategy of that generation.
+        # run_loop.py writes this to CSV so we can plot how the search climbed.
+        self.gen_history: List[dict] = []
 
     # ---- fitness ---------------------------------------------------------
     def _eval_strategy(self, strat: Strategy, pairs: List[Tuple]) -> Strategy:
@@ -309,8 +312,17 @@ class EvolutionaryAttacker:
             best_overall = population[: config.ELITE_KEEP] + best_overall
             best_overall = self._dedup(best_overall)[: config.ELITE_KEEP]
 
+            top = population[0]
+            self.gen_history.append({
+                "gen": gen,
+                "best_asr": round(top.fitness, 4),
+                "best_evasion": round(top.evasion, 4),
+                "best_root": top.root,
+                "best_origin": top.origin,
+                "best_template": top.template,
+            })
+
             if verbose:
-                top = population[0]
                 print(f"  gen {gen}: best ASR={top.fitness:.2f} "
                       f"evasion={top.evasion:.2f} origin={top.origin}")
                 print(f"         template={top.template!r}")
@@ -360,11 +372,14 @@ class EvolutionaryAttacker:
         return out
 
     # ---- persistence -----------------------------------------------------
-    def dump_log(self, path: str = config.ATTACK_LOG) -> None:
+    def dump_log(self, path: str = config.ATTACK_LOG, trial: int = 0, append: bool = False) -> None:
+        """Write every attempt to a .jsonl file. With append=True, several
+        trials can share one file; the 'trial' field tells them apart."""
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
+        with open(path, "a" if append else "w", encoding="utf-8") as f:
             for r in self.attack_log:
                 f.write(json.dumps({
+                    "trial": trial,
                     "target_task": r.target_task,
                     "injected_task": r.injected_task,
                     "injected_success": r.injected_success,

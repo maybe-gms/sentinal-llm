@@ -71,17 +71,26 @@ relative to it).
 ```bash
 # Offline smoke test — no Ollama needed, checks control flow only.
 # (Numbers are meaningless here; the mock client is not a real LLM.)
-py run_loop.py --mock --detector kad --rounds 2
+py run_loop.py --mock --detector m1 --arm enriched
 
 # Act 1: baseline vulnerability, no defense.
-py run_loop.py --detector none --rounds 1
+py run_loop.py --detector none --arm baseline
+py run_loop.py --detector none --arm enriched
 
-# Act 2/3: attack behind the known-answer detector baseline.
-py run_loop.py --detector kad --rounds 2
+# Act 2/3: attack behind M1 (needs the m1-detector model in Ollama).
+py run_loop.py --detector m1 --arm baseline
+py run_loop.py --detector m1 --arm enriched
 
-# Override the trial count (default comes from config.REPEAT_TRIALS):
-py run_loop.py --detector kad --rounds 2 --trials 3
+# Draw the charts + markdown table once the runs above exist.
+py report.py
 ```
+
+**`--detector`** picks the defender: `none`, `kad` (known-answer baseline), or
+`m1` (George's fine-tuned detector, served by Ollama as `m1-detector`).
+**`--arm`** picks the attacker: `baseline` is the original five-seed search;
+`enriched` also seeds from the structure templates (`template_bank.py`) and
+uses the structure-inspired operators + crossover. Running both arms against
+the same detector is the "did the structure templates help?" comparison.
 
 **Time budget (CPU):** ~240 model calls per round per trial. At full search size
 with 3 trials, a 2-round KAD run is ~1,400+ calls — think hours, run it
@@ -94,19 +103,26 @@ already computed, so a crash mid-run is cheap to resume.
   outputs are stochastic; a single trial is one roll of the dice).
 - Prints **blocked-vs-succeeded** counts per round, so detector effectiveness is
   visible on screen, not buried in a log.
-- Tags every output file by detector name so a `none` run and a `kad` run
-  **don't overwrite each other** — you need both on disk for the chart.
+- Tags every output file by `<detector>_<arm>` so different runs
+  **don't overwrite each other** — you need them all on disk for the chart.
 
 ### Outputs (in `runs/`)
 
-- `asr_history_<detector>.csv` — per-round ASR mean/std + block counts. **This is
-  your headline-chart data.** One file per detector (`none`, `known_answer`).
-- `<detector>_roundN_attacks.jsonl` — every attempt, with model output and block
-  status. Written from the first trial of each round.
-- `<detector>_roundN_contaminated.jsonl` — successful attacks as
+- `asr_history_<detector>_<arm>.csv` — per-round ASR mean/std + block counts.
+  **This is your headline-chart data.** One file per detector+arm.
+- `<detector>_<arm>_roundN_attacks.jsonl` — every attempt from **every trial**
+  (field `trial`), with model output, block status, and the `origin`/`root`
+  family it came from.
+- `<detector>_<arm>_roundN_contaminated.jsonl` — successful attacks as
   `{text, label, target_task, injected_task}`. **This is the handoff file M1
   retrains on.** Schema is stable — don't change it without telling M1's owner.
+- `<detector>_<arm>_roundN_generations.csv` — the best strategy of each
+  generation (how the search climbed).
+- `<detector>_<arm>_roundN_best.jsonl` — the final elite strategies per trial.
 - `llm_cache.json` — Ollama response cache. Regenerable; git-ignored.
+
+`py report.py` reads these and writes `chart_arms.png` (baseline vs enriched
+per defender), `chart_by_task.png`, `chart_by_origin.png`, and `report.md`.
 
 ---
 
@@ -192,9 +208,12 @@ If you understand one file for the viva, make it `attacker.py`.
 
 ## Known limitations (state these before an examiner finds them)
 
-- **std ~ 0** in current runs: fixed seed + temperature 0.1 makes the backend
-  near-deterministic, so trials barely differ. This is reproducibility, not a
-  bug — raise temperature (~0.7) for one run if you want to *show* variance.
+- **std ~ 0 in the *earlier* runs was a bug, now fixed.** Every trial used the
+  same random seed, so all trials drew identical task pairs and mutations, hit
+  the response cache, and replayed trial 1 exactly — the std was zero because
+  the trials were literally the same run. `run_loop.py` now seeds trial `t`
+  with `SEED + t` (trial 0 still uses `config.SEED`, so old numbers still
+  reproduce), so trials genuinely differ and the mean ± std is meaningful.
 - **Evolution isn't innovating much yet:** the best template stays close to the
   seed separators, because nothing is blocking attacks, so there's no selection
   pressure to climb. M2's adaptive search becomes *measurably* valuable only once
