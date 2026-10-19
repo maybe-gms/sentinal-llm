@@ -1,0 +1,5 @@
+# Integration demo UI dependencies.
+# The pipeline itself only needs `requests` (for real Ollama mode); Flask is
+# just the web front-end. Everything runs offline in mock mode with these two.
+flask>=3.0
+requests>=2.28

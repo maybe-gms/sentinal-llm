@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Co-Evolving LLM Security — Integrated Defense Demo</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --line:#2d3748;
+    --ink:#e6edf3; --mut:#9aa7b4; --faint:#6b7684;
+    --accent:#4c9aff; --accent2:#7c5cff;
+    --pass:#2ea043; --pass-bg:#10311b; --pass-line:#2ea04366;
+    --block:#e5534b; --block-bg:#3a1613; --block-line:#e5534b66;
+    --redact:#d29922; --redact-bg:#3a2d10; --redact-line:#d2992266;
+    --skip:#586069; --skip-bg:#1a1f27;
+    --radius:12px; --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+  header{display:flex;align-items:baseline;justify-content:space-between;
+         gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:18px}
+  h1{font-size:21px;margin:0;font-weight:650;letter-spacing:-0.01em}
+  h1 .sub{color:var(--mut);font-weight:400;font-size:14px;display:block;margin-top:3px}
+  .mode{font-family:var(--mono);font-size:12px;padding:4px 10px;border-radius:999px;
+        border:1px solid var(--line);color:var(--mut);white-space:nowrap}
+  .mode.real{color:var(--pass);border-color:var(--pass-line)}
+  .mode.mock{color:var(--accent)}
+  .grid{display:grid;grid-template-columns:360px 1fr;gap:22px;margin-top:24px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:0.08em;
+           color:var(--faint);margin:0 0 12px;font-weight:600}
+  label.fld{display:block;font-size:12px;color:var(--mut);margin:14px 0 6px}
+  textarea,input[type=text]{width:100%;background:var(--bg);color:var(--ink);
+    border:1px solid var(--line);border-radius:9px;padding:10px 11px;font-family:var(--sans);
+    font-size:13.5px;resize:vertical}
+  textarea:focus,input:focus{outline:none;border-color:var(--accent)}
+  textarea#data{min-height:120px}
+  .layers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .layers button{all:unset;cursor:pointer;text-align:center;padding:9px 6px;border-radius:9px;
+    border:1px solid var(--line);font-size:13px;color:var(--mut);transition:.12s}
+  .layers button .n{display:block;font-size:10.5px;color:var(--faint);margin-top:2px;font-weight:400}
+  .layers button.on{border-color:var(--accent);background:#132033;color:var(--ink)}
+  .layers button:hover{border-color:var(--accent)}
+  .presets{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+  .preset{all:unset;cursor:pointer;display:flex;align-items:center;gap:9px;
+    padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;transition:.12s}
+  .preset:hover{border-color:var(--accent);background:var(--panel2)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .dot.clean{background:var(--pass)} .dot.injection{background:var(--accent)}
+  .dot.leak{background:var(--block)} .dot.pii{background:var(--redact)}
+  .run{all:unset;cursor:pointer;display:block;text-align:center;margin-top:16px;
+    background:linear-gradient(180deg,var(--accent),#3b82e0);color:#fff;font-weight:600;
+    padding:12px;border-radius:10px;font-size:14px;transition:.12s}
+  .run:hover{filter:brightness(1.08)} .run:disabled{opacity:.5;cursor:default}
+  /* flow */
+  .flow{display:flex;flex-direction:column;gap:0}
+  .stage{position:relative;border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px 16px;background:var(--panel);transition:.2s;opacity:.45}
+  .stage.active{opacity:1}
+  .stage + .stage{margin-top:26px}
+  .stage + .stage::before{content:"";position:absolute;top:-24px;left:28px;width:2px;height:24px;background:var(--line)}
+  .stage.pass{border-color:var(--pass-line)} .stage.pass .pill{background:var(--pass-bg);color:var(--pass);border-color:var(--pass-line)}
+  .stage.flagged{border-color:var(--block-line);background:linear-gradient(180deg,var(--block-bg),var(--panel))}
+  .stage.flagged .pill{background:var(--block-bg);color:var(--block);border-color:var(--block-line)}
+  .stage.redacted{border-color:var(--redact-line)} .stage.redacted .pill{background:var(--redact-bg);color:var(--redact);border-color:var(--redact-line)}
+  .stage.skipped{opacity:.4;border-style:dashed}
+  .stage.generated .pill{background:#132033;color:var(--accent);border-color:#2b4b6e}
+  .stage.error{border-color:var(--block-line)} .stage.error .pill{background:var(--block-bg);color:var(--block)}
+  .stage .top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .stage .name{font-weight:600;font-size:14px;display:flex;align-items:center;gap:9px}
+  .stage .tag{font-family:var(--mono);font-size:10.5px;color:var(--faint);
+    border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  .pill{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 10px;
+    border-radius:999px;border:1px solid var(--line);text-transform:uppercase;letter-spacing:.04em}
+  .stage .detail{color:var(--mut);font-size:13px;margin-top:8px}
+  .stage .cats{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+  .cat{font-family:var(--mono);font-size:10.5px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:5px;padding:2px 7px;color:var(--mut)}
+  .lat{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .verdict{margin-top:4px;border-radius:var(--radius);padding:16px 18px;border:1px solid var(--line);
+    background:var(--panel);display:none}
+  .verdict.show{display:block}
+  .verdict.delivered{border-color:var(--pass-line);background:linear-gradient(180deg,var(--pass-bg),var(--panel))}
+  .verdict.blocked{border-color:var(--block-line);background:linear-gradient(180deg,var(--block-bg),var(--panel))}
+  .verdict .h{font-size:15px;font-weight:650}
+  .verdict .o{margin-top:10px;font-family:var(--mono);font-size:12.5px;color:var(--ink);
+    background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px 12px;white-space:pre-wrap;word-break:break-word}
+  .verdict .o .lbl{color:var(--faint);display:block;margin-bottom:5px;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em}
+  .placeholder{color:var(--faint);font-size:13.5px;text-align:center;padding:40px 10px}
+  .err{color:var(--block);font-size:13px;background:var(--block-bg);border:1px solid var(--block-line);
+    border-radius:9px;padding:11px 13px;margin-top:10px}
+  .note{color:var(--faint);font-size:11.5px;margin-top:9px;min-height:16px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--mut)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  footer{margin-top:40px;color:var(--faint);font-size:11.5px;text-align:center}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);
+    border-top-color:var(--accent);border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Integrated Defense Stack
+      <span class="sub">M1 input detector &rarr; backend LLM &rarr; M3 output monitor — one request, three independent layers</span>
+    </h1>
+    <div class="mode {{ 'mock' if mock else 'real' }}">{{ 'OFFLINE / MOCK' if mock else 'REAL · OLLAMA' }}</div>
+  </header>
+
+  <div class="grid">
+    <!-- controls -->
+    <div class="card">
+      <h2>1 · Defense configuration</h2>
+      <div class="layers" id="layers">
+        {% for c in layer_configs %}
+        <button data-layers="{{ c.id }}" class="{{ 'on' if c.id=='full' else '' }}">
+          {{ c.label }}<span class="n">{{ c.note }}</span>
+        </button>
+        {% endfor %}
+      </div>
+
+      <h2 style="margin-top:20px">2 · Pick an attack, or write your own</h2>
+      <div class="presets">
+        {% for s in scenarios %}
+        <button class="preset" data-id="{{ s.id }}">
+          <span class="dot {{ s.kind }}"></span>{{ s.label }}
+        </button>
+        {% endfor %}
+      </div>
+      <div class="legend">
+        <span><span class="dot clean"></span>clean</span>
+        <span><span class="dot injection"></span>input injection</span>
+        <span><span class="dot leak"></span>output leak</span>
+        <span><span class="dot pii"></span>PII</span>
+      </div>
+
+      <label class="fld" for="instruction">App instruction (the system prompt)</label>
+      <input type="text" id="instruction" autocomplete="off">
+      <label class="fld" for="data">User input (the untrusted data)</label>
+      <textarea id="data" placeholder="Type or pick a preset above&hellip;"></textarea>
+      <div class="note" id="note"></div>
+
+      <button class="run" id="run">Run through the stack &rarr;</button>
+    </div>
+
+    <!-- flow + verdict -->
+    <div>
+      <div class="verdict" id="verdict"></div>
+      <div class="card" style="margin-top:16px">
+        <h2>Request flow</h2>
+        <div id="flow">
+          <div class="placeholder">Pick a configuration and an input, then press Run.<br>
+            Each stage will show what it decided and why.</div>
+        </div>
+        <div class="err" id="err" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Final-year project · Adversarially Co-Evolving LLM Security Testing Framework ·
+    M1 (George) · M2 (Gayathri) · M3 (Jerin) · M4 (Fathima)
+  </footer>
+</div>
+
+<script>
+const STAGE_META = {
+  m1_input_detector: {name:"M1 — Input Detector", tag:"predict(text)"},
+  backend_llm:       {name:"Backend LLM",         tag:"llama3.1:8b"},
+  m3_output_monitor: {name:"M3 — Output Monitor",  tag:"inspect(output)"},
+};
+const OUTCOME_PILL = {
+  pass:"passed", flagged:"blocked", redacted:"redacted", skipped:"off",
+  generated:"generated", error:"error",
+};
+let currentLayers = "full";
+
+document.querySelectorAll("#layers button").forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll("#layers button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on"); currentLayers=b.dataset.layers;
+  };
+});
+
+document.querySelectorAll(".preset").forEach(b=>{
+  b.onclick=async()=>{
+    const r=await fetch("/api/scenario/"+b.dataset.id);
+    const s=await r.json();
+    document.getElementById("instruction").value=s.instruction;
+    document.getElementById("data").value=s.data;
+    document.getElementById("note").textContent=s.note||"";
+  };
+});
+
+function esc(t){const d=document.createElement("div");d.textContent=t;return d.innerHTML;}
+
+function renderStage(s, i){
+  const m=STAGE_META[s.stage]||{name:s.stage,tag:""};
+  const cats=(s.categories||[]).map(c=>`<span class="cat">${esc(c)}</span>`).join("");
+  const lat=s.latency_ms?`<span class="lat">${s.latency_ms.toFixed(1)} ms</span>`:"";
+  return `<div class="stage ${s.outcome}" style="animation-delay:${i*0.08}s">
+     <div class="top">
+       <div class="name">${esc(m.name)} <span class="tag">${esc(m.tag)}</span></div>
+       <div style="display:flex;align-items:center;gap:10px">${lat}
+         <span class="pill">${OUTCOME_PILL[s.outcome]||s.outcome}</span></div>
+     </div>
+     <div class="detail">${esc(s.detail||"")}</div>
+     ${cats?`<div class="cats">${cats}</div>`:""}
+   </div>`;
+}
+
+function reveal(flow){
+  const stages=[...flow.querySelectorAll(".stage")];
+  stages.forEach((el,i)=>setTimeout(()=>el.classList.add("active"), 120*i+60));
+}
+
+async function run(){
+  const btn=document.getElementById("run");
+  const data=document.getElementById("data").value.trim();
+  const err=document.getElementById("err");
+  const flow=document.getElementById("flow");
+  const verdict=document.getElementById("verdict");
+  err.style.display="none"; verdict.className="verdict";
+  if(!data){flow.innerHTML='<div class="placeholder">Enter some input text first.</div>';return;}
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Running&hellip;';
+  flow.innerHTML='<div class="placeholder"><span class="spin"></span> Sending through the stack&hellip;</div>';
+  try{
+    const res=await fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({layers:currentLayers,
+        instruction:document.getElementById("instruction").value,data})});
+    const j=await res.json();
+    if(!res.ok){err.style.display="block";err.textContent=(j.error||"error")+(j.hint?"  —  "+j.hint:"");
+      flow.innerHTML='<div class="placeholder">—</div>';return;}
+    flow.innerHTML=j.stages.map(renderStage).join("");
+    reveal(flow);
+    const cls=j.delivered?(j.defended?"redacted":"delivered"):"blocked";
+    verdict.className="verdict show "+(j.delivered?(j.defended?"delivered":"delivered"):"blocked");
+    const out=j.delivered
+      ? `<div class="o"><span class="lbl">Delivered to user</span>${esc(j.final_output)}</div>`
+      : `<div class="o"><span class="lbl">Withheld — user receives</span>${esc(j.final_output)}</div>`;
+    const raw=(!j.delivered && j.raw_output)
+      ? `<div class="o"><span class="lbl">What the model actually produced (caught before the user)</span>${esc(j.raw_output)}</div>`:"";
+    verdict.innerHTML=`<div class="h">${esc(j.headline)}</div>${out}${raw}`;
+  }catch(e){
+    err.style.display="block";err.textContent=String(e);
+  }finally{
+    btn.disabled=false;btn.textContent="Run through the stack →";
+  }
+}
+document.getElementById("run").onclick=run;
+</script>
+</body>
+</html>
